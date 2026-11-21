@@ -302,6 +302,15 @@
     return true;
   }
 
+  // Takes the next team ticket for the current round. Resolves to { key, team }.
+  async function ticket() {
+    if (round === null) throw new Error('No round yet');
+    const forWeek = week;
+    const forRound = round;
+    const number = await call('increment', core.counterName(forWeek, forRound, 'joins'));
+    return { key: core.roundKey(forWeek, forRound), team: core.teamForTicket(number, forRound) };
+  }
+
   let started = false;
   function start() {
     if (started) return;
@@ -316,6 +325,7 @@
   window.TugRope = {
     start,
     pull,
+    ticket,
     snapshot,
     on(type, listener) {
       listeners[type].add(listener);

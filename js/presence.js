@@ -2,8 +2,8 @@
  * Who's here, using the public retrac.space presence API.
  *
  * Presence only knows names, not teams, so each side is its own presence site:
- * "tugofwar-red" and "tugofwar-blue" for the two teams, and "tugofwar" for anyone who
- * hasn't picked a side yet. Joining a side leaves the old site and heartbeats to the new one.
+ * "tugofwar-red" and "tugofwar-blue". Heartbeats start once you've been given a team, and
+ * when the round ends you leave that site until your next team comes along.
  *
  * One visitor per browser session: every tab shares the same visitor ID through a session
  * cookie, like Simple Soundboard. Signed-in visitors show their username; everyone else gets
@@ -13,7 +13,7 @@
   'use strict';
 
   const API = 'https://space-api.retrac-space.workers.dev/v1/presence';
-  const LOBBY = 'tugofwar';
+  const PREFIX = 'tugofwar-';
   const VISITOR_COOKIE = 'tugofwar-visitor';
   const VISIBLE_KEY = 'tugofwar:visible-tab';
   const HEARTBEAT_MS = 30000;
@@ -26,14 +26,13 @@
   let username = null;
   let accountReady = false;
   let team = null;
-  let site = LOBBY;
+  let site = null; // No team, no heartbeats.
   let displayName = null;
   let heartbeatTimer = null;
   let listTimer = null;
   let heartbeatInFlight = null;
   let listInFlight = false;
-  let lists = 0;
-  let state = { status: 'checking', red: [], blue: [], watching: 0, self: null, team: null };
+  let state = { status: 'checking', red: [], blue: [], self: null, team: null };
   const listeners = new Set();
 
   function publish(next) {
@@ -60,7 +59,7 @@
   writeVisitor();
 
   function siteFor(value) {
-    return value ? LOBBY + '-' + value : LOBBY;
+    return value ? PREFIX + value : null;
   }
 
   async function send(url, options) {
@@ -99,7 +98,7 @@
   function heartbeat() {
     clearTimeout(heartbeatTimer);
     heartbeatTimer = setTimeout(heartbeat, HEARTBEAT_MS);
-    if (!accountReady) return Promise.resolve();
+    if (!accountReady || !site) return Promise.resolve();
     const visible = document.visibilityState === 'visible';
     if (!visible && anotherTabVisible()) return Promise.resolve();
     stampVisible();
@@ -173,21 +172,12 @@
     if (listInFlight || !accountReady) return;
     listInFlight = true;
     stampVisible();
-    lists++;
     try {
       if (heartbeatInFlight) await heartbeatInFlight;
-      const withLobby = lists % 3 === 1;
-      const reads = [siteFor('red'), siteFor('blue')].concat(withLobby ? [LOBBY] : [])
-        .map((target) => send(API + '/online/' + target, { method: 'GET' }));
-      const [red, blue, lobby] = await Promise.all(reads);
-      if (![red, blue].concat(withLobby ? [lobby] : []).every(validList)) throw new Error('Unexpected presence');
-      publish({
-        status: 'online',
-        red: people(red.users),
-        blue: people(blue.users),
-        watching: withLobby ? lobby.count : state.watching,
-        team,
-      });
+      const [red, blue] = await Promise.all([siteFor('red'), siteFor('blue')]
+        .map((target) => send(API + '/online/' + target, { method: 'GET' })));
+      if (!validList(red) || !validList(blue)) throw new Error('Unexpected presence');
+      publish({ status: 'online', red: people(red.users), blue: people(blue.users), team });
     } catch (error) {
       publish({ status: 'unavailable' });
     } finally {
@@ -205,7 +195,7 @@
     team = value || null;
     displayName = null;
     publish({ team, self: null });
-    leave(previous);
+    if (previous) leave(previous);
     heartbeat().then(refreshLists);
   }
 
@@ -214,7 +204,7 @@
     // The API keeps a supplied name even when it's left out later, so signing out needs a
     // fresh visitor to get an anonymous animal again.
     if (username && !value) {
-      leave(site);
+      if (site) leave(site);
       visitorId = crypto.randomUUID();
     }
     username = value;

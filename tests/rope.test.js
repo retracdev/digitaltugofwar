@@ -152,3 +152,15 @@ test('a later visit starts from the round this browser already knew', async () =
   assert.deepEqual([...second.rope.snapshot().wins], ['blue']);
   assert.ok(!second.calls.some((c) => c.key.includes('-r0-')));
 });
+
+test('each ticket is a fresh number from the round\'s joins counter', async () => {
+  const { rope, counters, settle } = setup({ [name(0, 'joins')]: 4 });
+  rope.start();
+  await settle();
+  const first = await rope.ticket();
+  const second = await rope.ticket();
+  assert.equal(counters.get(name(0, 'joins')), 6);
+  assert.equal(first.key, WEEK + '-r0');
+  assert.equal(first.team, 'red'); // Ticket 5.
+  assert.equal(second.team, 'blue'); // Ticket 6.
+});

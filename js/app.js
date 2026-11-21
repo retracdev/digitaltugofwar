@@ -16,7 +16,6 @@
   const el = {
     connection: $('connection'),
     connectionLabel: $('connectionLabel'),
-    watching: $('watching'),
     accountButton: $('accountButton'),
     redPct: $('redPct'),
     bluePct: $('bluePct'),
@@ -106,11 +105,13 @@
 
   function renderRope(snap) {
     const red = snap.redPercent;
-    el.redPct.textContent = percent(red);
-    el.bluePct.textContent = percent(100 - red);
+    // Rounded once, so the two sides always add up to exactly 100%.
+    const shown = Math.round(red * 10) / 10;
+    el.redPct.textContent = percent(shown);
+    el.bluePct.textContent = percent(100 - shown);
     el.barRed.style.width = red + '%';
     el.bar.setAttribute('aria-valuenow', red.toFixed(1));
-    el.bar.setAttribute('aria-valuetext', 'Red ' + percent(red) + ', Blue ' + percent(100 - red));
+    el.bar.setAttribute('aria-valuetext', 'Red ' + percent(shown) + ', Blue ' + percent(100 - shown));
     stage.setPosition(red);
 
     if (snap.status === 'loading' || snap.round === null) {
@@ -165,10 +166,9 @@
       const mine = state.team === team;
       half.classList.toggle('half--mine', mine);
       half.classList.toggle('half--theirs', joined && !mine);
-      half.setAttribute('aria-label', mine ? 'Pull for ' + TEAM_NAMES[team]
-        : joined ? TEAM_NAMES[team] : 'Join ' + TEAM_NAMES[team]);
-      half.tabIndex = !joined || mine ? 0 : -1;
-      half.setAttribute('aria-disabled', joined && !mine ? 'true' : 'false');
+      half.setAttribute('aria-label', mine ? 'Pull for ' + TEAM_NAMES[team] : TEAM_NAMES[team]);
+      half.tabIndex = mine ? 0 : -1;
+      half.setAttribute('aria-disabled', mine ? 'false' : 'true');
     });
     el.dockJoin.hidden = joined || !state.key;
     el.dockPlay.hidden = !joined;
@@ -187,7 +187,7 @@
       button.textContent = 'Sign in';
       button.addEventListener('click', () => openSignIn(button));
       note.append(joined ? 'Your team is saved in this browser. ' : 'Your team will be saved in this browser. ',
-        button, ' to save it to your retrac.space account and put your name on the rope.');
+        button, ' to keep it on every device and put your name on the rope.');
     } else if (state.cloud === 'syncing') {
       note.append('Syncing your team with your retrac.space account…');
     } else if (state.cloud === 'saved') {
@@ -234,8 +234,6 @@
     stage.setPeople(lists);
     el.redMeta.textContent = plural(lists.red.length, 'on the rope', 'on the rope');
     el.blueMeta.textContent = plural(lists.blue.length, 'on the rope', 'on the rope');
-    el.watching.hidden = !(state.watching > 0);
-    el.watching.textContent = plural(state.watching, 'person', 'people') + ' choosing a side';
   }
 
   // Tells you when someone grabs the rope or lets go. The first list is just a starting point.
@@ -279,10 +277,29 @@
     stage.floater(myTeam, clientX, clientY);
   }
 
-  function join(team, clientX, clientY) {
-    if (!teams.join(team)) return;
-    toast('You joined ' + TEAM_NAMES[team] + '! Tap your side to pull.', team);
-    pull(clientX, clientY);
+  // ---------- Being given a team ----------
+
+  // Nobody chooses a side: once we know you don't already have one this round, you take the
+  // next ticket and it decides (see core.teamForTicket). If the ticket can't be had, a coin
+  // flip does instead, so nobody is left standing on the sidelines.
+  let assigning = null;
+  async function maybeAssign() {
+    const state = teams.get();
+    const snap = rope.snapshot();
+    if (state.team || !state.settled || snap.key !== state.key || assigning === state.key) return;
+    const key = state.key;
+    assigning = key;
+    let team;
+    try {
+      const ticket = await rope.ticket();
+      if (ticket.key !== key) return;
+      team = ticket.team;
+    } catch (error) {
+      team = Math.random() < 0.5 ? 'red' : 'blue';
+    } finally {
+      if (assigning === key) assigning = null;
+    }
+    if (teams.assign(key, team)) toast('You’re on ' + TEAM_NAMES[team] + '! Tap your side to pull.', team);
   }
 
   core.TEAMS.forEach((team) => {
@@ -291,17 +308,6 @@
       if (!event.isPrimary || event.button !== 0 || myTeam !== team) return;
       event.preventDefault(); // No text selection or focus flash while clicking fast.
       pull(event.clientX, event.clientY);
-    });
-    half.addEventListener('click', (event) => {
-      if (myTeam || !roundKey) return;
-      join(team, event.clientX || undefined, event.clientY || undefined);
-    });
-    half.addEventListener('keydown', (event) => {
-      if ((event.key === 'Enter' || event.key === ' ') && !event.repeat && !myTeam) {
-        event.preventDefault();
-        event.stopPropagation(); // Joining pulls once already. The page's own key handler mustn't pull again.
-        join(team);
-      }
     });
   });
 
@@ -325,7 +331,7 @@
     box.querySelector('.celebrate__title').textContent = TEAM_NAMES[win.team] + ' wins!';
     const mine = myTeam === win.team ? 'Your team did it. ' : myTeam ? 'So close. ' : '';
     box.querySelector('.celebrate__text').textContent = mine
-      + 'The rope resets now. Pick a side for round ' + (win.round + 2) + '.';
+      + 'The rope resets now, with new teams for round ' + (win.round + 2) + '.';
     const confetti = box.querySelector('.celebrate__confetti');
     confetti.replaceChildren();
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -377,7 +383,7 @@
   // ---------- Wiring ----------
 
   rope.on('round', (snap) => {
-    if (currentWeek && snap.week !== currentWeek) toast('A new week, a fresh rope. Pick a side!');
+    if (currentWeek && snap.week !== currentWeek) toast('A new week, a fresh rope, new teams!');
     currentWeek = snap.week;
     roundKey = snap.key;
     myPulls = 0;
@@ -386,7 +392,10 @@
     known = null; // Everyone lets go between rounds. That's not news.
     teams.setRound(snap.key);
   });
-  rope.on('change', renderRope);
+  rope.on('change', (snap) => {
+    renderRope(snap);
+    maybeAssign();
+  });
   rope.on('win', celebrate);
 
   teams.subscribe((state) => {
@@ -395,6 +404,7 @@
     renderTeam(state);
     renderPeople();
     if (last && myTeam) renderRope(rope.snapshot());
+    maybeAssign();
   });
 
   presence.subscribe((state) => {

@@ -71,3 +71,13 @@ test('a cloud save only counts for its own round', () => {
   assert.equal(core.teamFromSave(null, '2026w47-r0'), null);
   assert.equal(core.teamFromSave([], '2026w47-r0'), null);
 });
+
+test('team tickets alternate, and the first ticket swaps teams every round', () => {
+  const round0 = [1, 2, 3, 4, 5, 6].map((ticket) => core.teamForTicket(ticket, 0));
+  assert.deepEqual(round0, ['red', 'blue', 'red', 'blue', 'red', 'blue']);
+  assert.equal(core.teamForTicket(1, 1), 'blue');
+  assert.equal(core.teamForTicket(2, 1), 'red');
+  // Any run of tickets splits evenly, however big the crowd.
+  const crowd = Array.from({ length: 101 }, (_, i) => core.teamForTicket(i + 1, 7));
+  assert.ok(Math.abs(crowd.filter((t) => t === 'red').length - crowd.filter((t) => t === 'blue').length) <= 1);
+});
