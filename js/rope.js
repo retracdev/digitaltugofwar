@@ -4,10 +4,12 @@
  *   - Finding the round: rounds are numbered from 0 each week. Starting from the last round
  *     this browser knew about, it reads each round's pulls and win markers until it reaches
  *     one nobody has won yet. That's the round everyone is pulling in.
- *   - Watching: while the tab is visible it reads both teams' pulls every few seconds, and
+ *   - Watching: while the tab is visible it reads every pull counter every few seconds, and
  *     the win markers every few reads, so wins seen elsewhere are picked up too.
- *   - Pulling: a pull shows on the rope at once, and is sent as one increment. Only a few
- *     are in flight at a time, and pulls faster than a person can click are not counted.
+ *   - Pulling: a pull shows on the rope at once (at an average strength), and is sent as one
+ *     increment. The number the API hands back says exactly how strong it was. Only a few are
+ *     in flight at a time, and pulls faster than a person can click are not counted.
+ *   - Mega pulls work the same way on their own counters, once per cooldown.
  *
  * Counts only ever go up, so the largest value seen for a counter is always the newest.
  */
@@ -26,8 +28,10 @@
   const MAX_QUEUED = 24;
   const MAX_ROUNDS_SCANNED = 400;
   const CACHE_PREFIX = 'tugofwar:week:';
+  const MEGA_KEY = 'tugofwar:mega-at';
+  const KINDS = ['red', 'blue', 'redmega', 'bluemega'];
 
-  const listeners = { change: new Set(), round: new Set(), win: new Set() };
+  const listeners = { change: new Set(), round: new Set(), win: new Set(), pulled: new Set() };
   function emit(type, value) {
     listeners[type].forEach((listener) => {
       try {
@@ -38,15 +42,20 @@
     });
   }
 
+  const zero = () => ({ red: 0, blue: 0, redmega: 0, bluemega: 0 });
+  const tally = core.createTally();
+
   // status: loading (finding the round), live, or offline (the last reads failed).
   let status = 'loading';
   let week = null;
   let round = null; // null while the round is being found.
-  let confirmed = { red: 0, blue: 0 };
+  let confirmed = zero(); // Pulls counted so far on each counter.
   let wins = []; // wins[round] is the team that won that round this week.
-  const pending = { red: 0, blue: 0 }; // Pulls from this tab not yet counted by the API.
-  const mine = { red: 0, blue: 0 }; // Pulls from this tab the API has counted this round.
+  const pending = zero(); // Pulls from this tab not yet counted by the API.
+  const mine = zero(); // Pulls from this tab the API has counted this round.
+  const mineUnits = { red: 0, blue: 0 };
   const markersSent = new Set();
+  let lastMega = readLastMega();
 
   // Bumped whenever the round or week changes, so late answers for an old round are ignored.
   let generation = 0;
@@ -78,12 +87,26 @@
   }
 
   async function readRound(forWeek, forRound, withMarkers) {
-    const names = ['red', 'blue'].concat(withMarkers ? ['wonred', 'wonblue'] : []);
-    const values = await Promise.all(names.map((kind) => call('get', core.counterName(forWeek, forRound, kind))));
-    return { red: values[0], blue: values[1], wonRed: values[2] || 0, wonBlue: values[3] || 0, markers: withMarkers };
+    const kinds = KINDS.concat(withMarkers ? ['wonred', 'wonblue'] : []);
+    const values = await Promise.all(kinds.map((kind) => call('get', core.counterName(forWeek, forRound, kind))));
+    const counts = { markers: withMarkers, wonRed: 0, wonBlue: 0 };
+    kinds.forEach((kind, i) => {
+      counts[kind === 'wonred' ? 'wonRed' : kind === 'wonblue' ? 'wonBlue' : kind] = values[i];
+    });
+    return counts;
   }
 
-  // ---------- This browser's memory of the week ----------
+  // A team's total strength, in units, from the pulls counted so far.
+  function teamUnits(forWeek, forRound, counts, team) {
+    return tally(core.counterName(forWeek, forRound, team), counts[team])
+      + tally(core.counterName(forWeek, forRound, team + 'mega'), counts[team + 'mega']);
+  }
+
+  function totals(forWeek, forRound, counts) {
+    return { red: teamUnits(forWeek, forRound, counts, 'red'), blue: teamUnits(forWeek, forRound, counts, 'blue') };
+  }
+
+  // ---------- This browser's memory ----------
 
   function loadCache(forWeek) {
     try {
@@ -110,25 +133,47 @@
     }
   }
 
+  // The cooldown survives a reload, so reloading isn't a shortcut to another mega pull.
+  function readLastMega() {
+    try {
+      const value = Number(localStorage.getItem(MEGA_KEY));
+      return Number.isFinite(value) && value <= Date.now() ? value : 0;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  function writeLastMega() {
+    try {
+      localStorage.setItem(MEGA_KEY, String(lastMega));
+    } catch (error) { /* Only this tab remembers, then. */ }
+  }
+
   // ---------- Reading ----------
 
   function snapshot() {
-    const red = confirmed.red + pending.red;
-    const blue = confirmed.blue + pending.blue;
+    const counted = week && round !== null ? totals(week, round, confirmed) : { red: 0, blue: 0 };
+    const red = counted.red + pending.red * core.EXPECTED_PULL_UNITS + pending.redmega * core.EXPECTED_MEGA_UNITS;
+    const blue = counted.blue + pending.blue * core.EXPECTED_PULL_UNITS + pending.bluemega * core.EXPECTED_MEGA_UNITS;
     return {
       status,
       week,
       round,
       key: week && round !== null ? core.roundKey(week, round) : null,
-      red,
+      red, // Each team's strength in units, including this tab's pulls on their way.
       blue,
-      confirmed: { ...confirmed },
-      mine: { red: mine.red + pending.red, blue: mine.blue + pending.blue },
-      counted: { ...mine },
+      confirmed: { ...confirmed }, // Pulls counted on each counter.
+      counted: { ...mine }, // This tab's pulls the API has counted, per counter.
+      mine: {
+        red: mine.red + mine.redmega + pending.red + pending.redmega,
+        blue: mine.blue + mine.bluemega + pending.blue + pending.bluemega,
+      },
+      mineUnits: { ...mineUnits },
       redPercent: core.redPercent(red, blue),
-      toWin: core.pullsToWin(red, blue),
+      toWin: core.unitsToWin(red, blue),
       wins: wins.slice(),
       endsAt: core.weekEnd(Date.now()),
+      megaReadyAt: lastMega ? lastMega + core.MEGA_COOLDOWN_MS : 0,
     };
   }
 
@@ -153,7 +198,7 @@
     const seenWins = cache.wins.slice();
     for (let r = cache.round; r < cache.round + MAX_ROUNDS_SCANNED; r++) {
       const counts = await readRound(forWeek, r, true);
-      const team = core.winner(counts);
+      const team = core.winner({ ...totals(forWeek, r, counts), wonRed: counts.wonRed, wonBlue: counts.wonBlue });
       if (!team) return { round: r, counts, wins: seenWins };
       seenWins[r] = team;
       if (!counts.wonRed && !counts.wonBlue) markWin(forWeek, r, team);
@@ -161,22 +206,30 @@
     throw new Error('Too many rounds');
   }
 
+  function resetRoundState() {
+    generation++;
+    queue.length = 0;
+    confirmed = zero();
+    KINDS.forEach((kind) => {
+      pending[kind] = 0;
+      mine[kind] = 0;
+    });
+    mineUnits.red = mineUnits.blue = 0;
+  }
+
+  function takeCounts(counts) {
+    KINDS.forEach((kind) => {
+      confirmed[kind] = Math.max(confirmed[kind], counts[kind] || 0);
+    });
+  }
+
   function enterRound(forWeek, found) {
     const isNew = forWeek !== week || found.round !== round;
-    if (isNew) {
-      generation++;
-      queue.length = 0;
-      pending.red = pending.blue = 0;
-      mine.red = mine.blue = 0;
-      confirmed = { red: 0, blue: 0 };
-    }
+    if (isNew) resetRoundState();
     week = forWeek;
     round = found.round;
     wins = found.wins;
-    confirmed = {
-      red: Math.max(confirmed.red, found.counts.red),
-      blue: Math.max(confirmed.blue, found.counts.blue),
-    };
+    takeCounts(found.counts);
     status = 'live';
     saveCache();
     if (isNew) emit('round', snapshot());
@@ -185,33 +238,28 @@
 
   // A win ends the round here, then the next round is found the usual way, in case others
   // have already moved on (or won that one too).
-  function finishRound(team, fromMarker) {
+  function finishRound(team, fromMarker, final) {
     const forWeek = week;
     const forRound = round;
     if (!fromMarker) markWin(forWeek, forRound, team);
     wins[forRound] = team;
     round = forRound + 1;
     saveCache();
-    generation++;
-    queue.length = 0;
-    pending.red = pending.blue = 0;
-    const final = snapshot();
-    emit('win', { week: forWeek, round: forRound, team, red: confirmed.red, blue: confirmed.blue, wins: final.wins });
+    emit('win', { week: forWeek, round: forRound, team, red: final.red, blue: final.blue, wins: wins.slice() });
+    resetRoundState();
     round = null;
-    confirmed = { red: 0, blue: 0 };
-    mine.red = mine.blue = 0;
     schedule(0);
   }
 
   function evaluate(markers) {
+    const now = totals(week, round, confirmed);
     const team = core.winner({
-      red: confirmed.red,
-      blue: confirmed.blue,
+      ...now,
       wonRed: markers ? markers.wonRed : 0,
       wonBlue: markers ? markers.wonBlue : 0,
     });
     if (!team) return false;
-    finishRound(team, Boolean(markers && (markers.wonRed || markers.wonBlue)));
+    finishRound(team, Boolean(markers && (markers.wonRed || markers.wonBlue)), now);
     return true;
   }
 
@@ -234,7 +282,7 @@
         polls++;
         const counts = await readRound(week, round, polls % MARKERS_EVERY === 0);
         if (started === generation) {
-          confirmed = { red: Math.max(confirmed.red, counts.red), blue: Math.max(confirmed.blue, counts.blue) };
+          takeCounts(counts);
           status = 'live';
           if (!evaluate(counts.markers ? counts : null)) emit('change', snapshot());
         }
@@ -265,14 +313,19 @@
   function pump() {
     while (inFlight < MAX_IN_FLIGHT && queue.length) {
       const job = queue.shift();
+      const name = core.counterName(job.week, job.round, job.kind);
       inFlight++;
-      call('increment', core.counterName(job.week, job.round, job.team))
-        .then((value) => {
+      call('increment', name)
+        .then((number) => {
           if (job.generation !== generation) return;
           failures = 0;
           status = 'live';
-          confirmed[job.team] = Math.max(confirmed[job.team], value);
-          mine[job.team]++;
+          confirmed[job.kind] = Math.max(confirmed[job.kind], number);
+          mine[job.kind]++;
+          // The number this pull got decides how strong it was.
+          const units = core.pullUnits(name, number);
+          mineUnits[job.team] += units;
+          emit('pulled', { team: job.team, mega: job.mega, units, meta: job.meta });
         })
         .catch(() => {
           // A lost pull is just a lost pull. Reads keep deciding whether we're offline.
@@ -280,7 +333,7 @@
         .finally(() => {
           inFlight--;
           if (job.generation === generation) {
-            pending[job.team] = Math.max(0, pending[job.team] - 1);
+            pending[job.kind] = Math.max(0, pending[job.kind] - 1);
             if (!evaluate(null)) emit('change', snapshot());
           }
           pump();
@@ -288,17 +341,41 @@
     }
   }
 
-  // Returns true when the pull counts, false when it was too fast or there's no round yet.
-  function pull(team) {
-    if (!core.isTeam(team) || round === null || status === 'loading') return false;
-    const now = performance.now();
-    while (recentPulls.length && now - recentPulls[0] >= 1000) recentPulls.shift();
-    if (recentPulls.length >= MAX_PULLS_PER_SECOND || queue.length >= MAX_QUEUED) return false;
-    recentPulls.push(now);
-    pending[team]++;
-    queue.push({ team, week, round, generation });
+  function send(team, mega, meta) {
+    const kind = mega ? team + 'mega' : team;
+    pending[kind]++;
+    queue.push({ kind, team, mega, meta, week, round, generation });
     pump();
     emit('change', snapshot());
+  }
+
+  function canPull(team) {
+    return core.isTeam(team) && round !== null && status !== 'loading' && queue.length < MAX_QUEUED;
+  }
+
+  // An ordinary pull. Returns true when it counts, false when it was too fast or there's no
+  // round yet. `meta` comes back with the "pulled" event (the page uses it for where to
+  // show the strength).
+  function pull(team, meta) {
+    if (!canPull(team)) return false;
+    const now = performance.now();
+    while (recentPulls.length && now - recentPulls[0] >= 1000) recentPulls.shift();
+    if (recentPulls.length >= MAX_PULLS_PER_SECOND) return false;
+    recentPulls.push(now);
+    send(team, false, meta);
+    return true;
+  }
+
+  function megaReady() {
+    return Date.now() >= lastMega + core.MEGA_COOLDOWN_MS;
+  }
+
+  // A mega pull, once per cooldown.
+  function megaPull(team, meta) {
+    if (!canPull(team) || !megaReady()) return false;
+    lastMega = Date.now();
+    writeLastMega();
+    send(team, true, meta);
     return true;
   }
 
@@ -325,6 +402,8 @@
   window.TugRope = {
     start,
     pull,
+    megaPull,
+    megaReady,
     ticket,
     snapshot,
     on(type, listener) {

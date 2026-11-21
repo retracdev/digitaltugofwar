@@ -33,6 +33,7 @@
     dockPlay: $('dockPlay'),
     dockTeam: $('dockTeam'),
     dockCount: $('dockCount'),
+    dockMega: $('dockMega'),
     saveNote: $('saveNote'),
     celebrate: $('celebrate'),
     toasts: $('toasts'),
@@ -44,8 +45,9 @@
   let roundKey = null;
   let currentWeek = null;
   let last = null; // The previous rope snapshot, to spot pulls from everyone else.
-  let myPulls = 0;
-  let savedPulls = 0; // Pulls from earlier visits this round, from this browser.
+  let mineNow = { pulls: 0, units: 0 }; // This page's pulls this round.
+  let mineBefore = { pulls: 0, units: 0 }; // Earlier visits' pulls this round, from this browser.
+  let lastOwnMega = 0;
 
   // ---------- Formatting ----------
 
@@ -83,11 +85,12 @@
 
   function loadMine(key) {
     try {
-      const value = Number(localStorage.getItem(MINE_PREFIX + key));
-      return Number.isSafeInteger(value) && value > 0 ? value : 0;
-    } catch (error) {
-      return 0;
-    }
+      const value = JSON.parse(localStorage.getItem(MINE_PREFIX + key));
+      if (value && Number.isSafeInteger(value.pulls) && Number.isSafeInteger(value.units)) {
+        return { pulls: Math.max(0, value.pulls), units: Math.max(0, value.units) };
+      }
+    } catch (error) { /* Start from nothing. */ }
+    return { pulls: 0, units: 0 };
   }
 
   function saveMine() {
@@ -97,7 +100,10 @@
         const key = localStorage.key(i);
         if (key && key.startsWith(MINE_PREFIX) && key !== MINE_PREFIX + roundKey) localStorage.removeItem(key);
       }
-      localStorage.setItem(MINE_PREFIX + roundKey, String(savedPulls + myPulls));
+      localStorage.setItem(MINE_PREFIX + roundKey, JSON.stringify({
+        pulls: mineBefore.pulls + mineNow.pulls,
+        units: mineBefore.units + mineNow.units,
+      }));
     } catch (error) { /* Only a nicety. */ }
   }
 
@@ -122,7 +128,7 @@
       el.scoreStatus.textContent = 'Dead even. Every pull counts.';
     } else {
       el.scoreStatus.textContent = TEAM_NAMES[snap.toWin.team] + ' is ahead · '
-        + plural(snap.toWin.pulls, 'more pull', 'more pulls') + ' to win';
+        + core.formatUnits(snap.toWin.units) + ' to go';
     }
     el.scoreStatus.dataset.team = snap.toWin ? snap.toWin.team : '';
 
@@ -140,17 +146,29 @@
     el.connectionLabel.textContent = snap.status === 'live' ? 'Live'
       : snap.status === 'offline' ? 'Reconnecting…' : 'Connecting…';
 
-    // Pulls from everyone else make their side heave too.
+    // Pulls from everyone else make their side heave too, and mega pulls get a shout.
     if (last && last.key === snap.key) {
+      const theirs = (kind) => (snap.confirmed[kind] - last.confirmed[kind]) - (snap.counted[kind] - last.counted[kind]);
       core.TEAMS.forEach((team) => {
-        const theirs = (snap.confirmed[team] - last.confirmed[team]) - (snap.counted[team] - last.counted[team]);
-        if (theirs > 0) stage.tug(team);
+        const megas = theirs(team + 'mega');
+        // A poll can see your own mega pull just before its answer arrives. Don't announce that.
+        const maybeMine = team === myTeam && performance.now() - lastOwnMega < 4000;
+        if (megas > 0 && !maybeMine) {
+          stage.tug(team, true);
+          toast((megas > 1 ? megas + ' mega pulls' : 'Mega pull') + ' for ' + TEAM_NAMES[team] + '!', team);
+        } else if (theirs(team) > 0 || megas > 0) stage.tug(team);
       });
     }
     if (myTeam && snap.key === roundKey) {
-      myPulls = snap.mine[myTeam];
-      el.dockCount.textContent = 'You’ve pulled ' + plural(savedPulls + myPulls, 'time', 'times') + ' this round.';
-      if (!last || last.counted[myTeam] !== snap.counted[myTeam]) saveMine();
+      const units = snap.mineUnits[myTeam];
+      const changed = mineNow.units !== units;
+      mineNow = { pulls: snap.mine[myTeam], units };
+      const pulls = mineBefore.pulls + mineNow.pulls;
+      el.dockCount.textContent = pulls
+        ? 'You’ve pulled ' + plural(pulls, 'time', 'times') + ' and moved the rope '
+          + core.formatUnits(mineBefore.units + mineNow.units) + ' this round.'
+        : '';
+      if (changed) saveMine();
     }
     last = snap;
   }
@@ -260,22 +278,96 @@
 
   // ---------- Pulling ----------
 
-  function pull(clientX, clientY) {
+  // Where a pull happened, so its strength can pop up there. Keys use the middle of your side.
+  function pointFor(clientX, clientY) {
+    if (clientX !== undefined) return { x: clientX, y: clientY };
+    const box = el.halves[myTeam].getBoundingClientRect();
+    return { x: box.left + box.width / 2, y: box.top + box.height * 0.3 };
+  }
+
+  function strain() {
+    const half = el.halves[myTeam];
+    half.classList.remove('is-straining');
+    void half.offsetWidth;
+    half.classList.add('is-straining');
+  }
+
+  function pull(point) {
     if (!myTeam) return;
-    if (!rope.pull(myTeam)) {
-      el.halves[myTeam].classList.remove('is-straining');
-      void el.halves[myTeam].offsetWidth;
-      el.halves[myTeam].classList.add('is-straining');
+    if (!rope.pull(myTeam, point)) {
+      strain();
       return;
     }
     stage.tug(myTeam);
-    if (clientX === undefined) {
-      const box = el.halves[myTeam].getBoundingClientRect();
-      clientX = box.left + box.width / 2;
-      clientY = box.top + box.height * 0.3;
-    }
-    stage.floater(myTeam, clientX, clientY);
   }
+
+  // ---------- Mega pulls ----------
+
+  // Every press is an ordinary pull. Keep holding and a ring fills up; when it's full, that's
+  // a mega pull. Then it needs a while to recharge (see core.MEGA_COOLDOWN_MS).
+  const CHARGE_SHOW_MS = 220; // Quick clicks never flash the ring.
+  let charge = null; // { source, start, point, team, frame }
+
+  function stopCharge() {
+    if (!charge) return;
+    cancelAnimationFrame(charge.frame);
+    charge = null;
+    stage.charge(null);
+  }
+
+  function stepCharge() {
+    if (!charge) return;
+    if (charge.team !== myTeam) {
+      stopCharge();
+      return;
+    }
+    const now = performance.now();
+    // Holding through the cooldown is fine: charging starts once it's over.
+    if (!rope.megaReady()) charge.start = now;
+    const held = now - charge.start;
+    if (held >= core.MEGA_HOLD_MS) {
+      const { team, point } = charge;
+      stopCharge();
+      if (rope.megaPull(team, point)) {
+        lastOwnMega = performance.now();
+        stage.tug(team, true);
+        renderMega();
+      }
+      return;
+    }
+    stage.charge(held >= CHARGE_SHOW_MS ? charge.point : null,
+      (held - CHARGE_SHOW_MS) / (core.MEGA_HOLD_MS - CHARGE_SHOW_MS), charge.team);
+    charge.frame = requestAnimationFrame(stepCharge);
+  }
+
+  function press(source, clientX, clientY) {
+    if (!myTeam) return;
+    stopCharge();
+    const point = pointFor(clientX, clientY);
+    pull(point);
+    charge = { source, start: performance.now(), point, team: myTeam, frame: 0 };
+    charge.frame = requestAnimationFrame(stepCharge);
+  }
+
+  function release(source) {
+    if (charge && charge.source === source) stopCharge();
+  }
+
+  function renderMega() {
+    if (!myTeam) return;
+    const wait = Math.ceil((rope.snapshot().megaReadyAt - Date.now()) / 1000);
+    el.dockMega.dataset.ready = wait > 0 ? 'false' : 'true';
+    el.dockMega.textContent = wait > 0
+      ? 'Mega pull recharging · ' + wait + 's'
+      : 'Hold for a mega pull (0.50–1.00%)';
+  }
+  setInterval(renderMega, 500);
+
+  // Your own pulls pop up with how strong they turned out to be.
+  rope.on('pulled', (event) => {
+    if (!event.meta) return;
+    stage.floater(event.team, event.meta.x, event.meta.y, '+' + core.formatUnits(event.units), event.mega);
+  });
 
   // ---------- Being given a team ----------
 
@@ -307,18 +399,31 @@
     half.addEventListener('pointerdown', (event) => {
       if (!event.isPrimary || event.button !== 0 || myTeam !== team) return;
       event.preventDefault(); // No text selection or focus flash while clicking fast.
-      pull(event.clientX, event.clientY);
+      // Keep hearing about this pointer even if it slides off the half while charging.
+      try {
+        half.setPointerCapture(event.pointerId);
+      } catch (error) { /* Not essential. */ }
+      press('pointer', event.clientX, event.clientY);
+    });
+    half.addEventListener('contextmenu', (event) => {
+      // A long press on a phone shouldn't open a menu in the middle of a charge.
+      if (myTeam === team) event.preventDefault();
     });
   });
+  document.addEventListener('pointerup', () => release('pointer'));
+  document.addEventListener('pointercancel', () => release('pointer'));
 
-  // Space or Enter pulls from anywhere, as long as it isn't pressing a button.
+  // Space or Enter pulls from anywhere, as long as it isn't pressing a button. Holding it
+  // charges a mega pull.
   document.addEventListener('keydown', (event) => {
     if (event.key !== ' ' && event.key !== 'Enter') return;
-    if (!myTeam || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (!myTeam || event.altKey || event.ctrlKey || event.metaKey) return;
     if (signIn.isOpen() || event.target.closest('button, a, input, textarea, select, dialog')) return;
     event.preventDefault();
-    pull();
+    if (!event.repeat) press('key:' + event.key);
   });
+  document.addEventListener('keyup', (event) => release('key:' + event.key));
+  window.addEventListener('blur', stopCharge);
 
   // ---------- Wins ----------
 
@@ -386,8 +491,9 @@
     if (currentWeek && snap.week !== currentWeek) toast('A new week, a fresh rope, new teams!');
     currentWeek = snap.week;
     roundKey = snap.key;
-    myPulls = 0;
-    savedPulls = loadMine(snap.key);
+    mineNow = { pulls: 0, units: 0 };
+    mineBefore = loadMine(snap.key);
+    stopCharge();
     last = null;
     known = null; // Everyone lets go between rounds. That's not news.
     teams.setRound(snap.key);
@@ -404,6 +510,7 @@
     renderTeam(state);
     renderPeople();
     if (last && myTeam) renderRope(rope.snapshot());
+    renderMega();
     maybeAssign();
   });
 
@@ -419,6 +526,7 @@
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') renderPeople();
+    else stopCharge();
   });
   setInterval(() => {
     el.reset.textContent = 'Resets in ' + untilReset(core.weekEnd(Date.now()));

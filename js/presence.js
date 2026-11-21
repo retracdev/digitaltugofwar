@@ -20,9 +20,21 @@
   const LIST_VISIBLE_MS = 5000;
   const LIST_HIDDEN_MS = 30000;
   const REQUEST_TIMEOUT_MS = 8000;
-  const tabId = crypto.randomUUID();
+  // crypto.randomUUID only exists on secure (https) pages. Over plain http it's missing, so
+  // build the same kind of random v4 UUID from crypto.getRandomValues, which works anywhere.
+  function uuid() {
+    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4.
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant.
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) + '-'
+      + hex.slice(16, 20) + '-' + hex.slice(20);
+  }
 
-  let visitorId = readVisitor() || crypto.randomUUID();
+  const tabId = uuid();
+
+  let visitorId = readVisitor() || uuid();
   let username = null;
   let accountReady = false;
   let team = null;
@@ -205,7 +217,7 @@
     // fresh visitor to get an anonymous animal again.
     if (username && !value) {
       if (site) leave(site);
-      visitorId = crypto.randomUUID();
+      visitorId = uuid();
     }
     username = value;
     accountReady = true;

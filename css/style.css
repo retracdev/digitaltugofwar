@@ -375,6 +375,49 @@ kbd {
 .crew--blue.is-tugging .fig__pose { animation: tug-blue .34s var(--ease) calc(var(--i, 0) * 16ms) both; }
 @keyframes tug-red { 40% { transform: translateX(-5px) rotate(-7deg); } }
 @keyframes tug-blue { 40% { transform: translateX(5px) rotate(7deg); } }
+.crew--red.is-tugging.is-mega .fig__pose { animation: mega-red .7s var(--ease) calc(var(--i, 0) * 22ms) both; }
+.crew--blue.is-tugging.is-mega .fig__pose { animation: mega-blue .7s var(--ease) calc(var(--i, 0) * 22ms) both; }
+@keyframes mega-red { 30% { transform: translateX(-14px) rotate(-18deg); } 60% { transform: translateX(-8px) rotate(-10deg); } }
+@keyframes mega-blue { 30% { transform: translateX(14px) rotate(18deg); } 60% { transform: translateX(8px) rotate(10deg); } }
+.arena.is-shaking { animation: shake .45s; }
+@keyframes shake {
+  15% { transform: translate(-4px, 2px); }
+  30% { transform: translate(4px, -2px); }
+  45% { transform: translate(-3px, -1px); }
+  60% { transform: translate(3px, 1px); }
+  80% { transform: translate(-1px, 0); }
+}
+
+/* The ring that fills while you hold for a mega pull. stage.js sets --progress from 0 to 1. */
+.charge {
+  position: absolute;
+  z-index: 70;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  pointer-events: none;
+}
+.charge svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+.charge circle { fill: none; stroke-width: 5; }
+.charge__track { stroke: rgba(21, 19, 28, .12); }
+.charge__fill {
+  stroke: var(--gold);
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: calc(100 - var(--progress, 0) * 100);
+}
+.charge[data-team="red"] .charge__fill { stroke: var(--red); }
+.charge[data-team="blue"] .charge__fill { stroke: var(--blue); }
+.charge span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  opacity: calc(.3 + var(--progress, 0) * .7);
+}
 
 .fig__tag {
   position: absolute;
@@ -420,6 +463,14 @@ kbd {
   transform: translate(-50%, -50%);
   animation: float-up .9s var(--ease) forwards;
 }
+.floater--mega {
+  z-index: 61;
+  font-size: 2rem;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  text-shadow: 0 2px 0 var(--gold);
+  animation-duration: 1.4s;
+}
 .floater--red { color: var(--red); }
 .floater--blue { color: var(--blue); }
 @keyframes float-up {
@@ -440,7 +491,17 @@ kbd {
 .dock__play { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 4px 10px; }
 .dock__team[data-team="red"] { color: var(--red); }
 .dock__team[data-team="blue"] { color: var(--blue); }
-.dock__count { color: var(--muted); }
+.dock__count { color: var(--muted); font-size: .9rem; }
+.dock__count:empty { display: none; }
+.dock__mega {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(245, 179, 1, .16);
+  color: #8a6200;
+  font-size: .85rem;
+  font-weight: 700;
+}
+.dock__mega[data-ready="false"] { background: #f1eff6; color: var(--muted); font-weight: 600; }
 .dock__save { color: var(--muted); font-size: .85rem; }
 .link-button {
   padding: 0;
@@ -706,7 +767,9 @@ kbd {
   .rig, .bar__red, .fig { transition: none; }
   .ribbon span, .connection__dot, .signin-waiting span { animation: none; }
   .crew--red.is-tugging .fig__pose, .crew--blue.is-tugging .fig__pose,
-  .rig.is-tugged-red .rope, .rig.is-tugged-blue .rope, .fig--enter, .half.is-straining { animation: none; }
+  .crew--red.is-tugging.is-mega .fig__pose, .crew--blue.is-tugging.is-mega .fig__pose,
+  .rig.is-tugged-red .rope, .rig.is-tugged-blue .rope, .fig--enter, .half.is-straining,
+  .arena.is-shaking { animation: none; }
   .floater { animation-duration: .01s; }
   .welcome-pill,
   .welcome-pill.visible,

@@ -122,35 +122,65 @@
     arena.dataset.leader = progress > 0 ? 'red' : progress < 0 ? 'blue' : 'even';
   }
 
-  // Every figure on that side leans back together, one after another down the line.
-  function tug(team) {
+  // Every figure on that side leans back together, one after another down the line. A mega
+  // pull is a much bigger heave, and shakes the whole arena.
+  function tug(team, mega) {
     const now = performance.now();
-    if (now - lastTug[team] < TUG_GAP_MS) return;
+    if (!mega && now - lastTug[team] < TUG_GAP_MS) return;
     lastTug[team] = now;
     const crew = crews[team];
-    crew.classList.remove('is-tugging');
+    crew.classList.remove('is-tugging', 'is-mega');
     void crew.offsetWidth; // Restart the animation.
     crew.classList.add('is-tugging');
+    crew.classList.toggle('is-mega', Boolean(mega));
     rig.classList.remove('is-tugged-' + team);
     void rig.offsetWidth;
     rig.classList.add('is-tugged-' + team);
+    if (mega) {
+      arena.classList.remove('is-shaking');
+      void arena.offsetWidth;
+      arena.classList.add('is-shaking');
+    }
   }
 
-  function floater(team, clientX, clientY) {
+  // The charge ring for a mega pull: point is { x, y } on screen, or null to hide it.
+  let ring = null;
+  function charge(point, progress, team) {
+    if (!point) {
+      if (ring) ring.hidden = true;
+      return;
+    }
+    if (!ring) {
+      ring = document.createElement('div');
+      ring.className = 'charge';
+      ring.setAttribute('aria-hidden', 'true');
+      ring.innerHTML = '<svg viewBox="0 0 48 48"><circle class="charge__track" cx="24" cy="24" r="20"/>'
+        + '<circle class="charge__fill" cx="24" cy="24" r="20" pathLength="100"/></svg><span>MEGA</span>';
+      arena.append(ring);
+    }
+    const box = arena.getBoundingClientRect();
+    ring.hidden = false;
+    ring.dataset.team = team;
+    ring.style.left = (point.x - box.left) + 'px';
+    ring.style.top = (point.y - box.top) + 'px';
+    ring.style.setProperty('--progress', Math.min(1, Math.max(0, progress)).toFixed(3));
+  }
+
+  function floater(team, clientX, clientY, text, mega) {
     const box = arena.getBoundingClientRect();
     const plus = document.createElement('span');
-    plus.className = 'floater floater--' + team;
-    plus.textContent = '+1';
+    plus.className = 'floater floater--' + team + (mega ? ' floater--mega' : '');
+    plus.textContent = mega ? 'MEGA ' + text : text;
     plus.style.left = (clientX - box.left) + 'px';
     plus.style.top = (clientY - box.top) + 'px';
     plus.style.setProperty('--drift', ((Math.random() - 0.5) * 40).toFixed(1) + 'px');
     arena.append(plus);
     plus.addEventListener('animationend', () => plus.remove(), { once: true });
-    setTimeout(() => plus.remove(), 1500);
+    setTimeout(() => plus.remove(), 2000);
   }
 
   if ('ResizeObserver' in window) new ResizeObserver(layout).observe(arena);
   else window.addEventListener('resize', layout);
 
-  window.TugStage = { setPeople, setPosition, tug, floater, layout };
+  window.TugStage = { setPeople, setPosition, tug, charge, floater, layout };
 })();

@@ -1,14 +1,23 @@
 /*
  * The rules of the rope, kept free of the page so they can be tested in Node.
  *
- * Every pull is one increment of a public retrac.space counter, one counter per team per
- * round: tugofwar-<week>-r<round>-red and tugofwar-<week>-r<round>-blue. Counters can only
- * go up and can't be reset, so a fresh round or week simply uses fresh counter names.
+ * Every pull is one increment of a public retrac.space counter. Each team has two counters per
+ * round: tugofwar-<week>-r<round>-red for ordinary pulls and tugofwar-<week>-r<round>-redmega
+ * for mega pulls (and the same for blue). Counters can only go up and can't be reset, so a
+ * fresh round or week simply uses fresh counter names.
  *
- * The rope sits at 50% and moves PULL_WORTH percentage points toward a team for every pull
- * that team is ahead by. A team wins the round when the rope reaches WIN_PERCENT on its
- * side, which takes a lead of WIN_LEAD pulls. Rounds also end when the week ends (Monday
- * 00:00 UTC), because the week is part of every counter name.
+ * How hard a pull is: counters only count, so a pull can't carry an amount. Instead, every
+ * increment gets back its own number (the 1st pull, the 2nd, ...), and the strength of pull
+ * number n is a scrambled hash of the counter's name and n. It looks random, but everyone
+ * works out the same strength for the same pull, so everyone agrees where the rope is.
+ *
+ *   - an ordinary pull moves the rope 0.01% to 0.10%
+ *   - a mega pull (hold to charge) moves it 0.50% to 1.00%
+ *
+ * Strengths are counted in units of 0.01%. The rope sits at 50% and moves toward whichever
+ * team has pulled harder in total. A team wins the round when the rope reaches WIN_PERCENT
+ * on its side, which takes a lead of WIN_LEAD units (45%). Rounds also end when the week ends
+ * (Monday 00:00 UTC), because the week is part of every counter name.
  *
  * The lead can shrink again after a win if pulls were still on their way, so the first
  * visitor to see a win also increments a "won" marker counter for that round. A marker
@@ -17,10 +26,13 @@
 (function (root) {
   'use strict';
 
-  const PULLS_PER_PERCENT = 20; // Each pull is worth 1/20 of a percent, so 0.05%.
-  const PULL_WORTH = 1 / PULLS_PER_PERCENT;
+  const UNITS_PER_PERCENT = 100; // One unit is 0.01% of rope.
+  const PULL_UNITS = [1, 10]; // An ordinary pull: 0.01% to 0.10%.
+  const MEGA_UNITS = [50, 100]; // A mega pull: 0.50% to 1.00%.
+  const MEGA_HOLD_MS = 1500; // How long to hold to charge a mega pull.
+  const MEGA_COOLDOWN_MS = 8000; // How long after a mega pull before charging another.
   const WIN_PERCENT = 95;
-  const WIN_LEAD = (WIN_PERCENT - 50) * PULLS_PER_PERCENT; // 900 pulls ahead.
+  const WIN_LEAD = (WIN_PERCENT - 50) * UNITS_PER_PERCENT; // 4,500 units, so 45%.
   const TEAMS = ['red', 'blue'];
   const PREFIX = 'tugofwar';
   const DAY_MS = 86400000;
@@ -56,8 +68,8 @@
     return week + '-r' + round;
   }
 
-  // kind is a team ("red", "blue"), that team's win marker ("wonred", "wonblue"), or the
-  // round's team tickets ("joins").
+  // kind is a team's pulls ("red", "blue"), its mega pulls ("redmega", "bluemega"), its win
+  // marker ("wonred", "wonblue"), or the round's team tickets ("joins").
   function counterName(week, round, kind) {
     return PREFIX + '-' + week + '-r' + round + '-' + kind;
   }
@@ -66,18 +78,79 @@
     return Number.isSafeInteger(value) && value > 0 ? value : 0;
   }
 
-  // How far Red has the rope, from 5 to 95. Blue has the rest.
+  // ---------- How hard each pull is ----------
+
+  // FNV-1a, then a murmur3 finish, so neighbouring pulls get unrelated strengths.
+  function hashName(name) {
+    let hash = 2166136261;
+    for (let i = 0; i < name.length; i++) {
+      hash ^= name.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function scramble(value) {
+    let x = value >>> 0;
+    x ^= x >>> 16;
+    x = Math.imul(x, 0x85ebca6b);
+    x ^= x >>> 13;
+    x = Math.imul(x, 0xc2b2ae35);
+    x ^= x >>> 16;
+    return x >>> 0;
+  }
+
+  function isMega(name) {
+    return name.endsWith('mega');
+  }
+
+  // The strength, in units, of pull number `index` (1, 2, 3, ...) on the counter `name`.
+  function pullUnits(name, index) {
+    const [min, max] = isMega(name) ? MEGA_UNITS : PULL_UNITS;
+    const roll = scramble(hashName(name) ^ Math.imul(index, 0x9e3779b1));
+    return min + (roll % (max - min + 1));
+  }
+
+  // The total strength of pulls `from + 1` through `to` on the counter `name`.
+  function unitsBetween(name, from, to) {
+    let total = 0;
+    for (let i = count(from) + 1; i <= to; i++) total += pullUnits(name, i);
+    return total;
+  }
+
+  // Keeps running totals per counter, so each new poll only adds up the new pulls.
+  function createTally() {
+    const totals = new Map(); // counter name -> { count, units }
+    return function unitsFor(name, pulls) {
+      const total = count(pulls);
+      const known = totals.get(name) || { count: 0, units: 0 };
+      if (total === known.count) return known.units;
+      if (total < known.count) return unitsBetween(name, 0, total); // Counts never go down, but just in case.
+      const next = { count: total, units: known.units + unitsBetween(name, known.count, total) };
+      totals.set(name, next);
+      return next.units;
+    };
+  }
+
+  // Midpoints, used for pulls still on their way, whose strength isn't known yet.
+  const EXPECTED_PULL_UNITS = (PULL_UNITS[0] + PULL_UNITS[1]) / 2;
+  const EXPECTED_MEGA_UNITS = (MEGA_UNITS[0] + MEGA_UNITS[1]) / 2;
+
+  // ---------- The rope ----------
+
+  // How far Red has the rope, from 5 to 95, given each team's total strength in units.
   function redPercent(red, blue) {
-    const percent = 50 + (count(red) - count(blue)) / PULLS_PER_PERCENT;
+    const percent = 50 + (Number(red || 0) - Number(blue || 0)) / UNITS_PER_PERCENT;
+    if (!Number.isFinite(percent)) return 50;
     return Math.min(WIN_PERCENT, Math.max(100 - WIN_PERCENT, percent));
   }
 
-  // The team that has won this round, or null while it's still going.
-  function winner(counts) {
-    const red = count(counts.red);
-    const blue = count(counts.blue);
-    const wonRed = count(counts.wonRed) > 0;
-    const wonBlue = count(counts.wonBlue) > 0;
+  // The team that has won this round, or null while it's still going. red and blue are units.
+  function winner(totals) {
+    const red = count(totals.red);
+    const blue = count(totals.blue);
+    const wonRed = count(totals.wonRed) > 0;
+    const wonBlue = count(totals.wonBlue) > 0;
     // Both markers can only happen if two visitors saw opposite wins at nearly the same
     // instant. The rope decides, and Red takes an exact tie so everyone agrees.
     if (wonRed && wonBlue) return blue > red ? 'blue' : 'red';
@@ -96,11 +169,16 @@
     return (count(ticket) + count(round)) % 2 === 1 ? 'red' : 'blue';
   }
 
-  // How many more pulls the leading team needs, or null when it's even.
-  function pullsToWin(red, blue) {
-    const lead = count(red) - count(blue);
-    if (lead === 0) return null;
-    return { team: lead > 0 ? 'red' : 'blue', pulls: Math.max(0, WIN_LEAD - Math.abs(lead)) };
+  // How far (in units) the leading team still has to pull, or null when it's even.
+  function unitsToWin(red, blue) {
+    const lead = Math.round(Number(red || 0) - Number(blue || 0));
+    if (!lead) return null;
+    return { team: lead > 0 ? 'red' : 'blue', units: Math.max(0, WIN_LEAD - Math.abs(lead)) };
+  }
+
+  // "0.07%" for 7 units.
+  function formatUnits(units) {
+    return (units / UNITS_PER_PERCENT).toFixed(2) + '%';
   }
 
   // The team cookie holds "<round key>.<team>", so it means nothing once the round is over.
@@ -128,8 +206,13 @@
   }
 
   const api = {
-    PULL_WORTH,
-    PULLS_PER_PERCENT,
+    UNITS_PER_PERCENT,
+    PULL_UNITS,
+    MEGA_UNITS,
+    EXPECTED_PULL_UNITS,
+    EXPECTED_MEGA_UNITS,
+    MEGA_HOLD_MS,
+    MEGA_COOLDOWN_MS,
     WIN_PERCENT,
     WIN_LEAD,
     TEAMS,
@@ -140,10 +223,14 @@
     otherTeam,
     roundKey,
     counterName,
+    pullUnits,
+    unitsBetween,
+    createTally,
     redPercent,
     winner,
     teamForTicket,
-    pullsToWin,
+    unitsToWin,
+    formatUnits,
     parseTeamCookie,
     teamFromSave,
   };
