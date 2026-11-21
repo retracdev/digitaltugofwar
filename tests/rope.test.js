@@ -53,10 +53,11 @@ function setup(seed = {}, storage = new Map()) {
   };
   vm.runInNewContext(ropeSource, context);
   const rope = window.TugRope;
-  const events = { round: [], win: [], change: [] };
+  const events = { round: [], win: [], change: [], pulled: [] };
   rope.on('round', (value) => events.round.push(value));
   rope.on('win', (value) => events.win.push(value));
   rope.on('change', (value) => events.change.push(value));
+  rope.on('pulled', (value) => events.pulled.push(value));
   // Lets every pending promise settle.
   const settle = () => new Promise((resolve) => setImmediate(resolve)).then(() => new Promise((r) => setImmediate(r)));
   return { rope, counters, calls, events, settle, timers };
@@ -74,21 +75,35 @@ test('a fresh week starts at round 0, even and live', async () => {
   assert.equal(events.round.length, 1);
 });
 
-test('a pull shows at once and is counted by one increment', async () => {
-  const { rope, counters, calls, settle } = setup({ [name(0, 'blue')]: 40 });
+// The smallest number of mega pulls on `counter` that adds up to at least `units`.
+function megasFor(counter, units) {
+  let n = 0;
+  while (core.unitsBetween(counter, 0, n) < units) n++;
+  return n;
+}
+
+test('a pull shows at once, then counts at the strength its number decides', async () => {
+  const { rope, counters, calls, events, settle } = setup({ [name(0, 'blue')]: 40 });
   rope.start();
   await settle();
-  assert.equal(rope.pull('red'), true);
-  assert.equal(rope.snapshot().red, 1); // Before the API answers.
+  const blue = core.unitsBetween(name(0, 'blue'), 0, 40);
+  assert.equal(rope.pull('red', { x: 1, y: 2 }), true);
+  assert.equal(rope.snapshot().red, 5.5); // Before the API answers: an average pull.
   await settle();
   assert.equal(counters.get(name(0, 'red')), 1);
   assert.equal(calls.filter((c) => c.op === 'increment').length, 1);
   assert.equal(calls.find((c) => c.op === 'increment').method, 'POST');
+  const units = core.pullUnits(name(0, 'red'), 1);
+  assert.equal(events.pulled.length, 1);
+  assert.equal(events.pulled[0].units, units);
+  assert.equal(events.pulled[0].mega, false);
+  assert.equal(events.pulled[0].meta.x, 1);
   const snap = rope.snapshot();
-  assert.equal(snap.confirmed.red, 1);
-  assert.equal(snap.counted.red, 1);
-  assert.equal(snap.blue, 40);
-  assert.equal(snap.redPercent, 50 + (1 - 40) / 20);
+  assert.equal(snap.red, units);
+  assert.equal(snap.blue, blue);
+  assert.equal(snap.mineUnits.red, units);
+  assert.equal(snap.mine.red, 1);
+  assert.equal(snap.redPercent, core.redPercent(units, blue));
 });
 
 test('pulls faster than 8 a second are not counted', async () => {
@@ -102,9 +117,31 @@ test('pulls faster than 8 a second are not counted', async () => {
   assert.equal(rope.snapshot().confirmed.blue, 8);
 });
 
+test('a mega pull uses its own counter, and then has to recharge', async () => {
+  const { rope, counters, events, settle } = setup();
+  rope.start();
+  await settle();
+  assert.equal(rope.megaReady(), true);
+  assert.equal(rope.megaPull('blue'), true);
+  assert.equal(rope.snapshot().blue, 75); // An average mega pull until it's counted.
+  assert.equal(rope.megaReady(), false);
+  assert.equal(rope.megaPull('blue'), false);
+  assert.ok(rope.snapshot().megaReadyAt > Date.now());
+  await settle();
+  const units = core.pullUnits(name(0, 'bluemega'), 1);
+  assert.ok(units >= 50 && units <= 100);
+  assert.equal(counters.get(name(0, 'bluemega')), 1);
+  assert.equal(counters.get(name(0, 'blue')) || 0, 0); // Read, never pulled.
+  assert.equal(events.pulled[0].mega, true);
+  assert.equal(rope.snapshot().blue, units);
+  // Ordinary pulls still work while it recharges.
+  assert.equal(rope.pull('blue'), true);
+});
+
 test('rounds already won are skipped, and a win seen first leaves a marker', async () => {
+  const megas = megasFor(name(0, 'redmega'), 4600);
   const { rope, counters, settle } = setup({
-    [name(0, 'red')]: 950, [name(0, 'blue')]: 10, // Won on the rope, no marker yet.
+    [name(0, 'redmega')]: megas, [name(0, 'blue')]: 10, // Won on the rope, no marker yet.
     [name(1, 'red')]: 3, [name(1, 'wonblue')]: 1, // Settled by a marker.
     [name(2, 'red')]: 7,
   });
@@ -113,16 +150,22 @@ test('rounds already won are skipped, and a win seen first leaves a marker', asy
   const snap = rope.snapshot();
   assert.equal(snap.round, 2);
   assert.deepEqual([...snap.wins], ['red', 'blue']);
-  assert.equal(snap.red, 7);
+  assert.equal(snap.red, core.unitsBetween(name(2, 'red'), 0, 7));
   assert.equal(counters.get(name(0, 'wonred')), 1);
   assert.equal(counters.get(name(1, 'wonblue')), 1); // Not marked again.
 });
 
 test('the winning pull ends the round and moves everyone to the next', async () => {
-  const { rope, counters, events, timers, settle } = setup({ [name(0, 'red')]: 899 });
+  // Just short of a win, so the next mega pull is bound to cross the line.
+  const counter = name(0, 'redmega');
+  const short = megasFor(counter, core.WIN_LEAD) - 1;
+  assert.ok(core.unitsBetween(counter, 0, short) < core.WIN_LEAD);
+  assert.ok(core.unitsBetween(counter, 0, short + 1) >= core.WIN_LEAD);
+  const { rope, counters, events, timers, settle } = setup({ [counter]: short });
   rope.start();
   await settle();
-  assert.equal(rope.pull('red'), true);
+  assert.equal(rope.snapshot().toWin.team, 'red');
+  assert.equal(rope.megaPull('red'), true);
   await settle();
   assert.equal(events.win.length, 1);
   assert.equal(events.win[0].team, 'red');

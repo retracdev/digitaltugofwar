@@ -8,8 +8,9 @@ You're put on a team, Red or Blue, as soon as you arrive. Tap your side (or pres
 
 ## How it works
 
-- **Each pull is worth 0.05%.** The rope starts at 50%. Every pull moves it 0.05% toward the puller's team, so 20 pulls move it 1%. Pulls from the other team cancel yours out.
-- **First to 95% wins the round.** That takes a 900-pull lead. Then the rope resets and everyone gets a new team.
+- **Every pull is a different strength.** The rope starts at 50%. Each pull moves it a random 0.01% to 0.10% toward the puller's team (0.055% on average). Pulls from the other team cancel yours out. Your pulls pop up with how strong they were.
+- **Hold for a mega pull.** Keep holding the click (or <kbd>Space</kbd>) for 1.5 seconds and a ring fills up. When it's full, that's a mega pull: a random 0.50% to 1.00%. Then it takes 8 seconds to recharge.
+- **First to 95% wins the round.** That takes a 45% lead. Then the rope resets and everyone gets a new team.
 - **The rope also resets every week**, on Monday at 00:00 UTC.
 - **Teams are picked for you.** New players alternate between Red and Blue, so a crowd arriving at once splits evenly. Which team gets the first player swaps every round.
 - **You stay on your team until the rope resets.** Your team is saved in a browser cookie. If you're signed in to a retrac.space account, it's also saved to your account, so you're on the same side on every device.
@@ -22,7 +23,8 @@ The site is plain HTML, CSS and JavaScript with no build step. It's hosted on Gi
 
 | What | Service |
 | --- | --- |
-| The rope | Public counters: `tugofwar-<week>-r<round>-red` and `-blue`. A pull is one increment. Fresh rounds and weeks use fresh counter names, since counters can't be reset. The first visitor to see a win also increments `-wonred` or `-wonblue`, which settles that round for good. |
+| The rope | Public counters: `tugofwar-<week>-r<round>-red` and `-blue` for pulls, `-redmega` and `-bluemega` for mega pulls. A pull is one increment. Fresh rounds and weeks use fresh counter names, since counters can't be reset. The first visitor to see a win also increments `-wonred` or `-wonblue`, which settles that round for good. |
+| Pull strength | Counters only count, so a pull can't carry an amount. Instead, each increment gets back its own number, and the strength of pull number *n* comes from a hash of the counter name and *n*. It looks random, but everyone works out the same strength for the same pull, so everyone agrees where the rope is. |
 | Picking teams | Public counter `tugofwar-<week>-r<round>-joins`. Each new player increments it once. The counter hands every caller a different number, and odd and even numbers go to different teams. |
 | Stick figures | Public presence, with one site per side: `tugofwar-red` and `tugofwar-blue`. |
 | Signing in | retrac.space accounts (`get-session` and `/api/auth/token`), the same flow as Simple Soundboard. |
