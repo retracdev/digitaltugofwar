@@ -56,7 +56,8 @@
     return week + '-r' + round;
   }
 
-  // kind is a team ("red", "blue") or that team's win marker ("wonred", "wonblue").
+  // kind is a team ("red", "blue"), that team's win marker ("wonred", "wonblue"), or the
+  // round's team tickets ("joins").
   function counterName(week, round, kind) {
     return PREFIX + '-' + week + '-r' + round + '-' + kind;
   }
@@ -85,6 +86,14 @@
     if (red - blue >= WIN_LEAD) return 'red';
     if (blue - red >= WIN_LEAD) return 'blue';
     return null;
+  }
+
+  // Nobody picks a side: each new player takes the next ticket from the round's "joins"
+  // counter, and tickets alternate between the teams. The counter hands every caller a
+  // different number, so even a crowd arriving at once splits evenly. Which team gets the
+  // first ticket swaps every round.
+  function teamForTicket(ticket, round) {
+    return (count(ticket) + count(round)) % 2 === 1 ? 'red' : 'blue';
   }
 
   // How many more pulls the leading team needs, or null when it's even.
@@ -133,6 +142,7 @@
     counterName,
     redPercent,
     winner,
+    teamForTicket,
     pullsToWin,
     parseTeamCookie,
     teamFromSave,

@@ -4,14 +4,15 @@ Tug of war, online! 🚩 A digital social experience, part of the [retrac.space]
 
 Visit it at [tugofwar.retrac.space](https://tugofwar.retrac.space).
 
-Pick a side, Red or Blue, then tap your side (or press <kbd>Space</kbd>) to pull. Everyone online shows up as a stick figure on their team's side of the rope, with their retrac.space username on their name tag, or an anonymous animal if they're not signed in. The percentages at the top show who has the rope.
+You're put on a team, Red or Blue, as soon as you arrive. Tap your side (or press <kbd>Space</kbd>) to pull. Everyone online shows up as a stick figure on their team's side of the rope, with their retrac.space username on their name tag, or an anonymous animal if they're not signed in. The percentages at the top show who has the rope.
 
 ## How it works
 
 - **Each pull is worth 0.05%.** The rope starts at 50%. Every pull moves it 0.05% toward the puller's team, so 20 pulls move it 1%. Pulls from the other team cancel yours out.
-- **First to 95% wins the round.** That takes a 900-pull lead. Then the rope resets and everyone picks a side again.
+- **First to 95% wins the round.** That takes a 900-pull lead. Then the rope resets and everyone gets a new team.
 - **The rope also resets every week**, on Monday at 00:00 UTC.
-- **You stay on your side until the rope resets.** Your team is saved in a browser cookie. If you're signed in to a retrac.space account, it's also saved to your account, so you're on the same side on every device.
+- **Teams are picked for you.** New players alternate between Red and Blue, so a crowd arriving at once splits evenly. Which team gets the first player swaps every round.
+- **You stay on your team until the rope resets.** Your team is saved in a browser cookie. If you're signed in to a retrac.space account, it's also saved to your account, so you're on the same side on every device.
 - **You can pull even if nobody's on the other side.** Your team just has a big advantage.
 - Pulls faster than 8 a second aren't counted.
 
@@ -22,7 +23,8 @@ The site is plain HTML, CSS and JavaScript with no build step. It's hosted on Gi
 | What | Service |
 | --- | --- |
 | The rope | Public counters: `tugofwar-<week>-r<round>-red` and `-blue`. A pull is one increment. Fresh rounds and weeks use fresh counter names, since counters can't be reset. The first visitor to see a win also increments `-wonred` or `-wonblue`, which settles that round for good. |
-| Stick figures | Public presence, with one site per side: `tugofwar-red`, `tugofwar-blue`, and `tugofwar` for people who haven't picked a side yet. |
+| Picking teams | Public counter `tugofwar-<week>-r<round>-joins`. Each new player increments it once. The counter hands every caller a different number, and odd and even numbers go to different teams. |
+| Stick figures | Public presence, with one site per side: `tugofwar-red` and `tugofwar-blue`. |
 | Signing in | retrac.space accounts (`get-session` and `/api/auth/token`), the same flow as Simple Soundboard. |
 | Saving your team | The account cloud save for game `tugofwar`, slot 0: `{ version: 1, round, team, joinedAt }`. |
 
@@ -30,7 +32,7 @@ The site is plain HTML, CSS and JavaScript with no build step. It's hosted on Gi
 | --- | --- |
 | `js/core.js` | The rules: what a pull is worth, when a round is won, week and counter names. No page code, so it's tested in Node. |
 | `js/rope.js` | Finds the current round, watches the counters and sends pulls. |
-| `js/team.js` | Your side this round, in a cookie and your cloud save. |
+| `js/team.js` | Your team this round, in a cookie and your cloud save. |
 | `js/presence.js` | Heartbeats and who's online on each side. |
 | `js/stage.js` | Draws the rope and the stick figures. |
 | `js/app.js` | Wires it all together: scoreboard, pulling, wins, toasts. |

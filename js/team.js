@@ -1,5 +1,6 @@
 /*
- * Which side you're on this round.
+ * Which side you're on this round. Nobody picks: app.js assigns a team (see
+ * core.teamForTicket) once this file is "settled", meaning it knows you don't already have one.
  *
  * Everyone's team is kept in a cookie as "<round key>.<team>", so it's forgotten as soon as
  * the round ends (a win or a new week). Signed-in visitors also keep it in their retrac.space
@@ -24,6 +25,7 @@
   let key = null; // The current round's key, or null while the round is being found.
   let team = null;
   let username = null;
+  let accountKnown = false; // Whether the first account check has answered.
   // cloud: off (not signed in), syncing, saved, or unavailable (cookie only for now).
   let cloud = 'off';
   let chain = Promise.resolve();
@@ -31,8 +33,15 @@
   let retries = 0;
   const listeners = new Set();
 
+  // Settled: there's a round, and if you have a team for it, `team` already says so. Signed-in
+  // visitors aren't settled until their cloud save has been read (or couldn't be).
+  function get() {
+    const settled = Boolean(key) && accountKnown && (!username || cloud === 'saved' || cloud === 'unavailable');
+    return { key, team, cloud, username, settled };
+  }
+
   function publish() {
-    const state = { key, team, cloud, username };
+    const state = get();
     listeners.forEach((listener) => listener(state));
   }
 
@@ -99,7 +108,7 @@
   }
 
   // Brings the cookie and the account into line for the current round. One at a time, so
-  // a join made while syncing is written after the read that came before it.
+  // a team assigned while syncing is written after the read that came before it.
   function sync() {
     clearTimeout(retryTimer);
     const forKey = key;
@@ -121,7 +130,7 @@
           await writeSave(token, forKey, team);
         }
         retries = 0;
-        if (forKey === key && forUser === username) setCloud('saved');
+        if (forKey === key && forUser === username) cloud = 'saved';
         publish();
       } catch (error) {
         if (forKey !== key || forUser !== username) return;
@@ -139,20 +148,13 @@
     if (nextKey === key) return;
     key = nextKey;
     team = nextKey ? readCookie(nextKey) : null;
+    // Not settled until the account has been asked about this round too.
+    if (username && nextKey) cloud = 'syncing';
     publish();
     if (username) sync();
   }
 
-  function join(value) {
-    if (!key || team || !core.isTeam(value)) return false;
-    team = value;
-    writeCookie(key, value);
-    publish();
-    if (username) sync();
-    return true;
-  }
-
-  // Another tab may have joined since this one loaded.
+  // Another tab may have been given a team since this one loaded.
   function recheck() {
     if (!key || team) return;
     const fromCookie = readCookie(key);
@@ -162,16 +164,32 @@
     }
   }
 
+  // Puts you on a team for the round `forKey`. Does nothing if you already have one.
+  function assign(forKey, value) {
+    if (!key || forKey !== key || !core.isTeam(value)) return false;
+    recheck();
+    if (team) return false;
+    team = value;
+    writeCookie(key, value);
+    publish();
+    if (username) sync();
+    return true;
+  }
+
   account.subscribe((state) => {
     if (state.status === 'unknown') return;
+    const firstAnswer = !accountKnown;
+    accountKnown = true;
     const next = state.status === 'authenticated' ? state.username : null;
-    // A failed check isn't a sign-out (account.js keeps the old state for that).
-    if (next === username) return;
-    username = next;
-    if (!username) {
-      clearTimeout(retryTimer);
-      setCloud('off');
+    // A failed recheck isn't a sign-out (account.js keeps the old state for that).
+    if (next === username) {
+      if (firstAnswer) publish();
+      return;
     }
+    username = next;
+    retries = 0;
+    clearTimeout(retryTimer);
+    cloud = username && key ? 'syncing' : 'off';
     publish();
     if (username) sync();
   });
@@ -181,9 +199,9 @@
   });
 
   window.TugTeam = {
-    get: () => ({ key, team, cloud, username }),
+    get,
     setRound,
-    join,
+    assign,
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

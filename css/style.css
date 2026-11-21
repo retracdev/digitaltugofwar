@@ -214,18 +214,16 @@ kbd {
   bottom: 0;
   width: 50%;
   touch-action: manipulation;
-  cursor: pointer;
+  cursor: default;
   outline: none;
   transition: background-color .2s;
 }
 .half--red { left: 0; background: var(--red-tint); }
 .half--blue { right: 0; background: var(--blue-tint); }
 .half:focus-visible { box-shadow: inset 0 0 0 3px var(--ink); }
-.half--red:hover, .half--red.half--mine:active { background: var(--red-tint-strong); }
-.half--blue:hover, .half--blue.half--mine:active { background: var(--blue-tint-strong); }
-.half--theirs { cursor: default; }
-.half--red.half--theirs:hover { background: var(--red-tint); }
-.half--blue.half--theirs:hover { background: var(--blue-tint); }
+.half--mine { cursor: pointer; }
+.half--red.half--mine:hover, .half--red.half--mine:active { background: var(--red-tint-strong); }
+.half--blue.half--mine:hover, .half--blue.half--mine:active { background: var(--blue-tint-strong); }
 
 .half__label {
   position: absolute;
@@ -239,24 +237,6 @@ kbd {
 }
 .half--red .half__label { left: 12px; color: var(--red); }
 .half--blue .half__label { right: 12px; color: var(--blue); }
-
-.half__cta {
-  position: absolute;
-  top: 9%;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 11px 22px;
-  border-radius: 999px;
-  color: #fff;
-  font-weight: 700;
-  white-space: nowrap;
-  transition: transform .15s var(--ease), box-shadow .15s;
-}
-.half--red .half__cta { background: var(--red); box-shadow: 0 4px 0 var(--red-deep); }
-.half--blue .half__cta { background: var(--blue); box-shadow: 0 4px 0 var(--blue-deep); }
-.half:hover .half__cta { transform: translate(-50%, -2px); }
-.half:active .half__cta { transform: translate(-50%, 3px); box-shadow: 0 1px 0 rgba(0, 0, 0, .3); }
-.arena.is-joined .half__cta { display: none; }
 
 .half__hint {
   display: none;
@@ -461,7 +441,7 @@ kbd {
 .dock__team[data-team="red"] { color: var(--red); }
 .dock__team[data-team="blue"] { color: var(--blue); }
 .dock__count { color: var(--muted); }
-.dock__save, .dock__watching { color: var(--muted); font-size: .85rem; }
+.dock__save { color: var(--muted); font-size: .85rem; }
 .link-button {
   padding: 0;
   border: 0;
@@ -720,7 +700,6 @@ kbd {
   .score__middle { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 2px 10px; padding: 0; }
   .arena { --fig-h: 72px; --fig-w: 43px; min-height: 320px; }
   .fig__tag { max-width: 92px; font-size: .66rem; }
-  .half__cta { padding: 9px 14px; font-size: .9rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
