@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Digital Tug of War · retrac.space</title>
+  <meta name="description" content="A digital social experience. Pick a side, then pull. Part of the retrac.space collection.">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="canonical" href="https://tugofwar.retrac.space/">
+  <meta property="og:site_name" content="Digital Tug of War">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Digital Tug of War">
+  <meta property="og:description" content="A digital social experience. Pick a side, then pull. Part of the retrac.space collection.">
+  <meta property="og:url" content="https://tugofwar.retrac.space/">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/space-grotesk-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- The stick figure. Red figures face right; blue ones are mirrored in CSS. Hands are at 48% height, on the rope. -->
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="stick" viewBox="0 0 60 100">
+      <g fill="none" style="stroke: var(--fig-ink)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M24 30 33 61"/>
+        <path d="M33 61 44 76 53 95h5"/>
+        <path d="M33 61 24 78 29 95h5"/>
+        <path d="M27 38 41 45 57 48"/>
+        <path d="M26 42 42 49 57 49"/>
+      </g>
+      <circle cx="20" cy="19" r="9.5" stroke-width="4" style="fill: var(--head); stroke: var(--fig-ink)"/>
+    </symbol>
+  </svg>
+
+  <div class="app">
+    <header class="topbar">
+      <a class="brand" href="https://retrac.space" aria-label="retrac.space">
+        <img src="assets/favicon.svg" alt="" width="34" height="34">
+        <span class="brand__text">
+          <span class="brand__name">Digital Tug of War</span>
+          <span class="brand__tagline">A digital social experience</span>
+        </span>
+      </a>
+      <div class="topbar__right">
+        <span class="connection" id="connection" data-state="loading" role="status">
+          <span class="connection__dot" aria-hidden="true"></span>
+          <span id="connectionLabel">Connecting…</span>
+        </span>
+        <button type="button" class="account-button" id="accountButton" hidden>Sign in</button>
+      </div>
+    </header>
+
+    <section class="score" aria-label="Score">
+      <div class="score__team score__team--red">
+        <span class="score__name">Team Red</span>
+        <span class="score__pct" id="redPct">50.0%</span>
+        <span class="score__meta" id="redMeta">0 on the rope</span>
+      </div>
+      <div class="score__middle">
+        <span class="score__round" id="roundLabel">Round …</span>
+        <span class="score__tally" id="tally">No wins yet this week</span>
+        <span class="score__reset" id="resetLabel">Resets in …</span>
+      </div>
+      <div class="score__team score__team--blue">
+        <span class="score__name">Team Blue</span>
+        <span class="score__pct" id="bluePct">50.0%</span>
+        <span class="score__meta" id="blueMeta">0 on the rope</span>
+      </div>
+      <div class="bar" id="bar" role="meter" aria-label="Rope position" aria-valuemin="5" aria-valuemax="95" aria-valuenow="50">
+        <div class="bar__red" id="barRed"></div>
+        <span class="bar__tick bar__tick--red" title="Red wins at 95%"></span>
+        <span class="bar__tick bar__tick--mid"></span>
+        <span class="bar__tick bar__tick--blue" title="Blue wins at 95%"></span>
+      </div>
+      <p class="score__status" id="scoreStatus" aria-live="polite">Finding the rope…</p>
+    </section>
+
+    <main class="arena" id="arena">
+      <div class="half half--red" id="halfRed" data-team="red" role="button" tabindex="0" aria-label="Join Team Red">
+        <span class="half__label" aria-hidden="true">RED</span>
+        <span class="half__cta" aria-hidden="true">Join Team Red</span>
+        <span class="half__hint" aria-hidden="true">Tap to pull</span>
+      </div>
+      <div class="half half--blue" id="halfBlue" data-team="blue" role="button" tabindex="0" aria-label="Join Team Blue">
+        <span class="half__label" aria-hidden="true">BLUE</span>
+        <span class="half__cta" aria-hidden="true">Join Team Blue</span>
+        <span class="half__hint" aria-hidden="true">Tap to pull</span>
+      </div>
+      <div class="divider" aria-hidden="true"></div>
+      <div class="ground" aria-hidden="true"></div>
+      <span class="win-line win-line--red" aria-hidden="true"><span>Red wins</span></span>
+      <span class="win-line win-line--blue" aria-hidden="true"><span>Blue wins</span></span>
+      <div class="rig" id="rig" aria-hidden="true">
+        <div class="rope"></div>
+        <div class="crew crew--red" id="crewRed"></div>
+        <div class="crew crew--blue" id="crewBlue"></div>
+        <div class="ribbon"><span></span></div>
+      </div>
+    </main>
+
+    <section class="dock">
+      <p class="dock__join" id="dockJoin" hidden>Pick a side to start pulling. You’ll stay on it until the rope resets.</p>
+      <p class="dock__play" id="dockPlay" hidden>
+        <strong class="dock__team" id="dockTeam"></strong>
+        <span>Tap your side or press <kbd>Space</kbd> to pull.</span>
+        <span class="dock__count" id="dockCount"></span>
+      </p>
+      <p class="dock__save" id="saveNote"></p>
+      <p class="dock__watching" id="watching" hidden></p>
+    </section>
+
+    <footer class="footer">
+      <p>First to 95% wins the round. Each pull moves the rope 0.05%. The rope resets when a team wins, and every Monday at 00:00 UTC.</p>
+      <p>Part of the <a href="https://retrac.space" class="wordmark">retrac<span>.space</span></a> collection.</p>
+    </footer>
+  </div>
+
+  <div class="celebrate" id="celebrate" hidden>
+    <div class="celebrate__confetti" aria-hidden="true"></div>
+    <div class="celebrate__card" role="status" aria-live="assertive">
+      <p class="celebrate__kicker"></p>
+      <h2 class="celebrate__title"></h2>
+      <p class="celebrate__text"></p>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="js/core.js" defer></script>
+  <script src="js/account.js" defer></script>
+  <script src="js/sign-in.js" defer></script>
+  <script src="js/account-welcome.js" defer></script>
+  <script src="js/rope.js" defer></script>
+  <script src="js/team.js" defer></script>
+  <script src="js/presence.js" defer></script>
+  <script src="js/stage.js" defer></script>
+  <script src="js/app.js" defer></script>
+</body>
+</html>
