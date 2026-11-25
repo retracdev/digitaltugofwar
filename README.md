@@ -27,7 +27,7 @@ The site is plain HTML, CSS and JavaScript with no build step. It's hosted on Gi
 | Pull strength | Counters only count, so a pull can't carry an amount. Instead, each increment gets back its own number, and the strength of pull number *n* comes from a hash of the counter name and *n*. It looks random, but everyone works out the same strength for the same pull, so everyone agrees where the rope is. |
 | Picking teams | Public counter `tugofwar-<week>-r<round>-joins`. Each new player increments it once. The counter hands every caller a different number, and odd and even numbers go to different teams. |
 | Stick figures | Public presence, with one site per side: `tugofwar-red` and `tugofwar-blue`. |
-| Signing in | retrac.space accounts (`get-session` and `/api/auth/token`), the same flow as Simple Soundboard. |
+| Signing in | retrac.space accounts (`get-session` and `/api/auth/token`), the same flow as Simple Soundboard. **Sign in or create account** goes to `accounts.retrac.space/guided-setup` in the same tab, with `assets/social/guided-setup.jpg` as its art. It sends you back with `?signed-in`, and a "You're signed in" popup greets you. |
 | Saving your team | The account cloud save for game `tugofwar`, slot 0: `{ version: 1, round, team, joinedAt }`. |
 
 | File | What it does |
@@ -56,3 +56,5 @@ Until then, everything works except account features: teams are saved in the bro
 ## Development
 
 Open `index.html` through any static server. The shared APIs only answer `retrac.space` sites, so locally the rope shows "Reconnecting…". `npm test` runs the tests in Node (no dependencies needed).
+
+The guided sign-in art is drawn in `scripts/templates/guided-setup.html`. After changing it (or the icon), run `npm install` once, then `npm run build:art` to redo `assets/social/guided-setup.jpg`. It uses your installed Chrome or Edge.
