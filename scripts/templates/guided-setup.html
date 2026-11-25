@@ -1,0 +1,274 @@
+<!doctype html>
+<!--
+  960x1200 art for the retrac.space guided sign-in page: two crews of glossy stick figures
+  pulling a gold rope across a perspective floor, with the app icon in the middle.
+  Rendered to assets/social/guided-setup.jpg by `npm run build:art`.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 960px; height: 1200px; overflow: hidden; background: #0b0912; }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<svg id="art" width="960" height="1200" viewBox="0 0 960 1200" xmlns="http://www.w3.org/2000/svg"></svg>
+<script>
+  const W = 960, H = 1200, CX = W / 2;
+  const HORIZON = 540;
+  const ROPE_Y = 608; // Lines up with the rope on the icon.
+  const FLOOR_Y = 752; // Where the front pullers stand, and the floor reflects.
+
+  const TEAMS = {
+    red: { base: '#b5191c', mid: '#e5383b', light: '#ff8a7e', head: '#ff6f66', deep: '#6d0b10' },
+    blue: { base: '#1a4fbd', mid: '#2f6fed', light: '#8fb8ff', head: '#5f93ff', deep: '#0c2763' },
+  };
+
+  // The same stick figure as the game's sprite (60x100, facing right, hands on the rope at 48%).
+  const LIMBS = [
+    'M24 30 33 61',
+    'M33 61 44 76 53 95h5',
+    'M33 61 24 78 29 95h5',
+    'M27 38 41 45 57 48',
+    'M26 42 42 49 57 49',
+  ];
+  const HAND = { x: 57, y: 48.5 };
+
+  // A small seeded random, so the art comes out the same every time.
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+
+  function defs() {
+    let out = '';
+    for (const [name, c] of Object.entries(TEAMS)) {
+      out += `<radialGradient id="head-${name}" cx="38%" cy="32%" r="70%">
+          <stop offset="0" stop-color="#fff" stop-opacity=".95"/>
+          <stop offset=".18" stop-color="${c.light}"/>
+          <stop offset=".6" stop-color="${c.mid}"/>
+          <stop offset="1" stop-color="${c.deep}"/>
+        </radialGradient>`;
+    }
+    return out + `
+      <linearGradient id="sky" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#5a0c12"/>
+        <stop offset=".42" stop-color="#2a0f2e"/>
+        <stop offset=".58" stop-color="#14183d"/>
+        <stop offset="1" stop-color="#0b2766"/>
+      </linearGradient>
+      <linearGradient id="skyShade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#07060d" stop-opacity=".92"/>
+        <stop offset=".6" stop-color="#07060d" stop-opacity=".35"/>
+        <stop offset="1" stop-color="#07060d" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="floorRed" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#3a0a10"/>
+        <stop offset=".35" stop-color="#8f161b"/>
+        <stop offset="1" stop-color="#2a060a"/>
+      </linearGradient>
+      <linearGradient id="floorBlue" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#0a1a44"/>
+        <stop offset=".35" stop-color="#163f9c"/>
+        <stop offset="1" stop-color="#060f2c"/>
+      </linearGradient>
+      <linearGradient id="horizonGlow" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+        <stop offset=".5" stop-color="#ffd9f0" stop-opacity=".35"/>
+        <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="centerLine" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fff" stop-opacity=".15"/>
+        <stop offset=".4" stop-color="#fff" stop-opacity=".75"/>
+        <stop offset="1" stop-color="#fff" stop-opacity=".25"/>
+      </linearGradient>
+      <linearGradient id="rope" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fff2b0"/>
+        <stop offset=".25" stop-color="#ffd447"/>
+        <stop offset=".65" stop-color="#e09a00"/>
+        <stop offset="1" stop-color="#7a4a00"/>
+      </linearGradient>
+      <pattern id="twist" width="14" height="18" patternUnits="userSpaceOnUse" patternTransform="skewX(-38)">
+        <rect width="5" height="18" fill="#5a3300" opacity=".42"/>
+        <rect x="5" width="1.4" height="18" fill="#fff" opacity=".35"/>
+      </pattern>
+      <radialGradient id="spotRed" cx="0" cy="0" r="1" gradientTransform="translate(250 560) scale(420 300)" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#ff4d52" stop-opacity=".5"/>
+        <stop offset="1" stop-color="#ff4d52" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="spotBlue" cx="0" cy="0" r="1" gradientTransform="translate(710 560) scale(420 300)" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#4d8bff" stop-opacity=".5"/>
+        <stop offset="1" stop-color="#4d8bff" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="iconGlow" cx="0" cy="0" r="1" gradientTransform="translate(480 608) scale(300)" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#e4d6ff" stop-opacity=".75"/>
+        <stop offset=".35" stop-color="#ab8fff" stop-opacity=".35"/>
+        <stop offset="1" stop-color="#ab8fff" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="beamRed" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#ff6b70" stop-opacity=".38"/>
+        <stop offset="1" stop-color="#ff6b70" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="beamBlue" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#6b9dff" stop-opacity=".38"/>
+        <stop offset="1" stop-color="#6b9dff" stop-opacity="0"/>
+      </linearGradient>
+      <radialGradient id="vignette" cx="50%" cy="52%" r="75%">
+        <stop offset=".55" stop-color="#000" stop-opacity="0"/>
+        <stop offset="1" stop-color="#000" stop-opacity=".7"/>
+      </radialGradient>
+      <linearGradient id="reflectFade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#fff" stop-opacity=".9"/>
+        <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+      </linearGradient>
+      <mask id="reflectMask" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}">
+        <rect y="${FLOOR_Y}" width="${W}" height="330" fill="url(#reflectFade)"/>
+      </mask>
+      <filter id="reflectBlur"><feGaussianBlur stdDeviation="3"/></filter>
+      <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7"/></filter>
+      <filter id="softer" x="-50%" y="-200%" width="200%" height="500%"><feGaussianBlur stdDeviation="12"/></filter>
+      <filter id="haze"><feGaussianBlur stdDeviation="1.1"/></filter>
+      <filter id="far"><feGaussianBlur stdDeviation=".7"/></filter>
+      <filter id="iconShadow" x="-30%" y="-30%" width="160%" height="170%">
+        <feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#000" flood-opacity=".7"/>
+      </filter>`;
+  }
+
+  // The arena: split red/blue backdrop, light beams, cheering crowds, and a floor in perspective.
+  function arena() {
+    let out = `<rect width="${W}" height="${H}" fill="url(#sky)"/>
+      <rect width="${W}" height="${HORIZON}" fill="url(#skyShade)"/>`;
+
+    // Stadium lights and their beams.
+    const lights = [[120, 'Red'], [300, 'Red'], [660, 'Blue'], [840, 'Blue']];
+    for (const [x, team] of lights) {
+      const toward = x < CX ? 90 : -90;
+      out += `<path d="M${x - 14} 70 L${x + 14} 70 L${x + toward + 170} ${HORIZON} L${x + toward - 170} ${HORIZON}Z" fill="url(#beam${team})" opacity=".55"/>`;
+      out += `<circle cx="${x}" cy="66" r="16" fill="#fff" opacity=".9" filter="url(#soft)"/><circle cx="${x}" cy="66" r="6" fill="#fff"/>`;
+    }
+
+    // Bleachers: rows of little cheering fans, red on the left and blue on the right.
+    const rows = [
+      { y: 400, s: .42, gap: 30, o: .38 },
+      { y: 455, s: .5, gap: 34, o: .5 },
+      { y: 515, s: .6, gap: 40, o: .62 },
+    ];
+    for (const row of rows) {
+      out += `<rect x="0" y="${row.y + 2}" width="${W}" height="${row.s * 60}" fill="#07060d" opacity=".35"/>`;
+      for (let x = -10 + rand() * row.gap; x < W + 10; x += row.gap * (0.8 + rand() * 0.4)) {
+        if (Math.abs(x - CX) < 26) continue;
+        const team = x < CX ? TEAMS.red : TEAMS.blue;
+        const hop = rand() * 8 * row.s;
+        out += fan(x, row.y - hop, row.s * (0.85 + rand() * 0.3), team, row.o);
+      }
+    }
+
+    // The floor, split down the middle, with a grid that runs off to the horizon.
+    out += `<path d="M0 ${HORIZON} H${CX} V${H} H0Z" fill="url(#floorRed)"/>
+      <path d="M${CX} ${HORIZON} H${W} V${H} H${CX}Z" fill="url(#floorBlue)"/>
+      <rect y="${HORIZON - 40}" width="${W}" height="80" fill="url(#horizonGlow)"/>
+      <ellipse cx="250" cy="720" rx="420" ry="190" fill="url(#spotRed)"/>
+      <ellipse cx="710" cy="720" rx="420" ry="190" fill="url(#spotBlue)"/>`;
+    let grid = '';
+    for (let k = -14; k <= 14; k++) {
+      if (k === 0) continue;
+      grid += `<path d="M${CX} ${HORIZON} L${CX + k * 150} ${H + 300}"/>`;
+    }
+    for (let t = 1; t <= 14; t++) {
+      const y = HORIZON + 760 * Math.pow(t / 14, 2.1);
+      grid += `<path d="M0 ${y.toFixed(1)} H${W}"/>`;
+    }
+    out += `<g stroke="#fff" stroke-opacity=".09" stroke-width="1.5" fill="none">${grid}</g>`;
+    out += `<path d="M${CX - 2} ${HORIZON} L${CX + 2} ${HORIZON} L${CX + 22} ${H} L${CX - 22} ${H}Z" fill="#fff" opacity=".35" filter="url(#soft)"/>
+      <path d="M${CX - 1} ${HORIZON} L${CX + 1} ${HORIZON} L${CX + 9} ${H} L${CX - 9} ${H}Z" fill="url(#centerLine)"/>`;
+    return out;
+  }
+
+  // A tiny fan with both arms in the air.
+  function fan(x, y, s, team, opacity) {
+    return `<g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${s.toFixed(3)})" opacity="${opacity}" filter="url(#haze)">
+        <g fill="none" stroke="${team.base}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M0 -40 V-12 M0 -12 -9 6 M0 -12 9 6 M0 -34 -13 -54 M0 -34 13 -54"/>
+        </g>
+        <circle cx="0" cy="-48" r="8" fill="${team.mid}"/>
+      </g>`;
+  }
+
+  // One glossy, tube-like stick figure with its hands on the rope. Red faces right.
+  function puller(hx, s, team, depth) {
+    const c = TEAMS[team];
+    const x = hx - HAND.x * s;
+    const y = ROPE_Y - HAND.y * s;
+    const feet = y + 95 * s;
+    const limbs = LIMBS.map((d) => `<path d="${d}"/>`).join('');
+    const shade = depth === 'far' ? 'filter="url(#far)" opacity=".9"' : '';
+    return `<g ${shade}>
+        <ellipse cx="${(x + 48 * s).toFixed(1)}" cy="${(feet + 2).toFixed(1)}" rx="${(34 * s).toFixed(1)}" ry="${(5.5 * s).toFixed(1)}" fill="#000" opacity=".5" filter="url(#soft)"/>
+        <g transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${s})">
+          <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <g stroke="${c.deep}" stroke-width="6.6" transform="translate(.9 1)">${limbs}</g>
+            <g stroke="${c.base}" stroke-width="6.4">${limbs}</g>
+            <g stroke="${c.mid}" stroke-width="4.4" transform="translate(-.5 -.6)">${limbs}</g>
+            <g stroke="${c.light}" stroke-width="1.6" transform="translate(-1.3 -1.4)" opacity=".7">${limbs}</g>
+          </g>
+          <circle cx="21" cy="21.5" r="10.5" fill="#000" opacity=".25" filter="url(#haze)"/>
+          <circle cx="20" cy="19" r="10.5" fill="url(#head-${team})" stroke="${c.deep}" stroke-width="1.2"/>
+          <ellipse cx="16.6" cy="14.6" rx="3.4" ry="2.2" fill="#fff" opacity=".8" transform="rotate(-30 16.6 14.6)"/>
+        </g>
+      </g>`;
+  }
+
+  // One side of the rope, laid out for red. Pullers alternate between the near and far side
+  // of the rope, the way real teams line up.
+  function crew(team, layout) {
+    const far = layout.filter((p) => p.depth === 'far').map((p) => puller(p.hx, p.s, team, 'far')).join('');
+    const near = layout.filter((p) => p.depth === 'near').map((p) => puller(p.hx, p.s, team, 'near')).join('');
+    return { far, near };
+  }
+
+  function layout(offset) {
+    const spots = [];
+    const steps = [326, 262, 200, 136, 74, 12];
+    steps.forEach((hx, i) => {
+      const depth = i % 2 ? 'far' : 'near';
+      const s = depth === 'near' ? 3.05 - i * 0.04 : 2.4 - i * 0.03;
+      spots.push({ hx: hx + offset[i], s, depth });
+    });
+    // Outer ones first, so the ones nearer the middle sit in front.
+    return spots.reverse();
+  }
+
+  function rope() {
+    const y = ROPE_Y;
+    return `<path d="M-20 ${y + 152} H${W + 20}" stroke="#000" stroke-width="22" opacity=".35" filter="url(#softer)"/>
+      <rect x="-20" y="${y - 9}" width="${W + 40}" height="18" rx="9" fill="url(#rope)"/>
+      <rect x="-20" y="${y - 9}" width="${W + 40}" height="18" rx="9" fill="url(#twist)"/>
+      <rect x="-20" y="${y - 6}" width="${W + 40}" height="3" rx="1.5" fill="#fff" opacity=".45"/>`;
+  }
+
+  const red = crew('red', layout([0, 4, -3, 6, 0, -4]));
+  const blue = crew('blue', layout([-5, 0, 5, -2, 4, 2]));
+  const mirror = `transform="translate(${W} 0) scale(-1 1)"`;
+
+  // The glossy floor shows a faint, blurred reflection of everything on it.
+  document.getElementById('art').innerHTML = `<defs>${defs()}
+      <g id="scene">
+        <g>${red.far}</g><g ${mirror}>${blue.far}</g>
+        ${rope()}
+        <g>${red.near}</g><g ${mirror}>${blue.near}</g>
+        <image href="../../assets/favicon.svg" x="340" y="${ROPE_Y - 138}" width="280" height="280"/>
+      </g>
+    </defs>
+    ${arena()}
+    <g mask="url(#reflectMask)" opacity=".28" filter="url(#reflectBlur)">
+      <use href="#scene" transform="translate(0 ${2 * FLOOR_Y}) scale(1 -1)"/>
+    </g>
+    <circle cx="480" cy="${ROPE_Y}" r="300" fill="url(#iconGlow)"/>
+    <g>${red.far}</g><g ${mirror}>${blue.far}</g>
+    ${rope()}
+    <g>${red.near}</g><g ${mirror}>${blue.near}</g>
+    <image href="../../assets/favicon.svg" x="340" y="${ROPE_Y - 138}" width="280" height="280" filter="url(#iconShadow)"/>
+    <rect width="${W}" height="${H}" fill="url(#vignette)"/>`;
+</script>
+</body>
+</html>
